@@ -1,0 +1,139 @@
+---
+title: "CRT Tagging Notebook"
+author: "Andy Jones"
+date: "06/14/2021"
+output: html_document
+---
+
+###PIT TAG TRACKING SCRIPT
+
+```{r, message=FALSE, warning=FALSE}
+##########################################################################
+##Reading in the tagging data
+##########################################################################
+
+#loading the libraries you will need to run the script
+library(tidyverse)
+library(RColorBrewer)
+library(lubridate)
+
+#Importing the PIT Reader data
+Tag_Data_Compiled <- read.delim("Tag_Data_Compiled_20210531.txt",stringsAsFactors = FALSE)
+
+#Substituting out / for -
+Tag_Data_Compiled$Date <- gsub("/", "-", Tag_Data_Compiled$Date)
+
+#Formating the data as as.POSIXct
+Tag_Data_Compiled <- Tag_Data_Compiled %>% 
+                          mutate(dates = as.POSIXct(strptime(paste(Tag_Data_Compiled[,3], 
+                          Tag_Data_Compiled[,4], sep=" "), 
+                          format="%m-%d-%y %H:%M:%S")))
+
+#Putting things together (smoothes out some odd formating)
+Movement_Data <- Tag_Data_Compiled %>% 
+                  dplyr::select(Tag,DT=dates,Location=Site_Antenna_Num,
+                         Type=X.2,Num_Detect=X.4) %>% 
+                  arrange(Tag,DT)
+
+```
+
+```{r}
+##########################################################################
+##Reading in the tagging data
+##########################################################################
+Tagged_Fish_ALL<- read.delim("Intial tagging Data_2021.txt",stringsAsFactors = FALSE)
+
+#Joining it to the reader data
+Movement_Data2 <- inner_join(Movement_Data,Tagged_Fish_ALL,by=c('Tag'="tag.number.full")) %>% 
+  rename("tag.number.full"='Tag')
+
+```
+
+```{r}
+##########################################################################
+###Bringing in the name/sponsor/class data
+##########################################################################
+Tag_Names <-  read.csv("Names_2021.csv",stringsAsFactors = FALSE)
+
+#Joining the names to the movement data
+Movement_Data3 <- inner_join(Movement_Data2,Tag_Names,by="tag.number.full")
+
+#Dropping a repeated column
+Movement_Data3 <- Movement_Data3 %>% rename("Location"="Location.x") %>% dplyr::select(-Location.y)
+
+```
+
+```{r}
+##########################################################################
+#Data about the locations of antennas
+##########################################################################
+Locations_A <- read.delim("location_data_2021.txt",stringsAsFactors = FALSE)
+
+#Adding the location data
+Movement_Data4 <- left_join(Movement_Data3,Locations_A,by='Location')
+
+#Setting up a custom color palette
+pallete_mov <- c("A0"="#756bb1","A1"="#3182bd","A2"="#3182bd",
+                 "A3"="#3182bd","B1"="#ffeda0","B2"="#fff7bc",
+                 "B3"="#fec44f","B4"="#d95f0e","B5"="#d95f0e",
+                 "C0"="#a1d99b","C1"="#31a354","D1"="#e34a33",
+                 "D2"="#e34a33","J1"="#ffeda0","J2"="#fff7bc",
+                 "J3"="#fec44f","J4"="#d95f0e","T1"="#4B0082",
+                 "T2"="#800080","B0"="#ffeda0","A5"="#3182bd",
+                 "U1"="#ffeda0","U2"="#fff7bc","U3"="#fec44f",
+                 "U4"="#d95f0e","A28"="#756bb1","A6"="#3182bd")
+
+```
+
+```{r}
+##########################################################################
+#Plotting things out by sponsor/class
+##########################################################################
+
+#making a vector of fish
+name_list <- Movement_Data_Subset$name %>% unique()
+
+#making a vector of sponsors
+sponsor_list <- Movement_Data_Subset$sponser %>% unique()
+
+#Loop
+#plotting the path of each named fish
+for(i in 1:length(sponsor_list)) {
+
+fish_plot <- ggplot(data=Movement_Data_Subset %>% filter(sponser==sponsor_list[i]),aes(x=DT, y=Location2)) + 
+                      geom_path(aes(x=DT,y=Location2,group=tag.number.full),size=1) +
+                      geom_point(aes(x=DT,y=Location2,colour=Location),size=4,alpha=0.65) + 
+                      scale_colour_manual(values=pallete_mov) +
+                      #scale_x_datetime(limits=c(as.POSIXct('2021/04/19 12:00:00'),
+                                                #as.POSIXct('2021/12/31 12:00:00'))) +
+                        #scale_y_continuous(aes(limits=Location2,labels=Name)) +
+                       theme_gray(base_size=21) +
+                       theme(legend.position = "none") +
+                        facet_wrap(~name,scales='free') +
+                      theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5,size=6)) +
+                      labs(x='Date and time',y='Position in the watershed',
+                           title=paste('Tracks for',sponsor_list[i]),
+                           subtitle = 'Position: 1 = Tagging Site & 20 = Coonamessett Pond')
+
+print(i)
+
+print(fish_plot)
+
+#Saving the plots
+ggsave(paste(sponsor_list[i],'.pdf',sep=''),device = 'pdf',width = 30, height = 20, units = "cm")
+
+#Making a data file for fish
+Movement_Data_Subset %>% filter(sponser==sponsor_list[i]) %>% mutate(Sex=Gender) %>%
+  dplyr::select(name,tag.number.full,Species,Sex,Length,sponser) %>% distinct() %>%
+  mutate(sponsor=sponser) %>%
+  write_csv(.,paste(sponsor_list[i],'_Fish_Data.csv',sep=''))
+
+#Making a data file for detections
+Movement_Data_Subset %>% filter(sponser==sponsor_list[i]) %>% mutate(Sex=Gender) %>%
+  mutate(sponsor=sponser) %>%
+  write_csv(.,paste(sponsor_list[i],'_Tag_Data.csv',sep=''))
+
+}
+
+
+```
